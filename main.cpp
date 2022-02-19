@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <vector>
 
+#define _USE_MATH_DEFINES
+#include <math.h>
+
 /* My coding standard
 member variables: mVarName
 local variables: varName
@@ -83,6 +86,7 @@ int main()
     float player_x = 3.456f;
     float player_y = 2.345f;
     float player_view_dir = 1.523f;
+    const float fov = M_PI / 3;
 
     for (size_t j = 0; j < win_h; j++)
     {
@@ -111,17 +115,22 @@ int main()
     // draw player on map
     draw_rectangle(framebuffer, win_w, win_h, player_x*rect_w, player_y*rect_h, 5, 5, pack_color(255, 255, 255));
 
-    // draw player view direction ray
-    for(float t = 0; t < 20; t+=.05) // t is the distance from player the ray hit
+    // draw player view direction with fov
+    for(size_t i = 0; i < win_w; i++)
     {
-        float cx = player_x + t * cos(player_view_dir);
-        float cy = player_y + t * sin(player_view_dir);
-        if(map[int(cx) + int(cy) * map_w] != ' ') break;
-        size_t pix_x = cx * rect_w;
-        size_t pix_y = cy * rect_h;
+        float angle = player_view_dir - fov/2 + fov*i/float(win_w);
+        for(float t = 0; t < 20; t+=0.05f)
+        {
+            float cx = player_x + t * cosf(angle);
+            float cy = player_y + t * sinf(angle);
+            if(map[int(cx) + int(cy) * map_w] != ' ') break;
 
-        framebuffer[pix_x + pix_y * win_w] = pack_color(255, 255, 255);
+            size_t pix_x = cx * rect_w;
+            size_t pix_y = cy * rect_h;
+            framebuffer[pix_x + pix_y*win_w] = pack_color(255, 255, 255);
+        }
     }
+    
 
     create_ppm_image("./out.ppm", framebuffer, win_w, win_h);
 
