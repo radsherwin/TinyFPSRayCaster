@@ -82,6 +82,7 @@ int main()
     // Player
     float player_x = 3.456f;
     float player_y = 2.345f;
+    float player_view_dir = 1.523f;
 
     for (size_t j = 0; j < win_h; j++)
     {
@@ -107,7 +108,20 @@ int main()
         }
     }
 
+    // draw player on map
     draw_rectangle(framebuffer, win_w, win_h, player_x*rect_w, player_y*rect_h, 5, 5, pack_color(255, 255, 255));
+
+    // draw player view direction ray
+    for(float t = 0; t < 20; t+=.05) // t is the distance from player the ray hit
+    {
+        float cx = player_x + t * cos(player_view_dir);
+        float cy = player_y + t * sin(player_view_dir);
+        if(map[int(cx) + int(cy) * map_w] != ' ') break;
+        size_t pix_x = cx * rect_w;
+        size_t pix_y = cy * rect_h;
+
+        framebuffer[pix_x + pix_y * win_w] = pack_color(255, 255, 255);
+    }
 
     create_ppm_image("./out.ppm", framebuffer, win_w, win_h);
 
