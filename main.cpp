@@ -145,7 +145,7 @@ int main()
                     assert(icolor < ncolors);
                     // height of the wall: inversely proportional to the distance to the nearest obstacle
                     // think of the effect when you see things far away they appear "small" vs things closer to you.
-                    size_t column_height = win_h / t; // height of window divided by distance of hit point
+                    size_t column_height = win_h / (t * cosf(angle - player_view_angle)); // denominator deals with fish eye distortion
                     draw_rectangle(framebuffer,
                                    win_w,                           // img_w
                                    win_h,                           // img_h
