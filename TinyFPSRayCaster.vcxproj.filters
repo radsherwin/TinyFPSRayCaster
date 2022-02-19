@@ -23,5 +23,16 @@
     <ClInclude Include="MathLibrary.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="textures\monsters.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="textures\walltext.png">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>
