@@ -1,10 +1,11 @@
 #include <iostream>
 #include <cassert>
 #include <fstream>
-#include <sstream>
-#include <iomanip>
 #include <cstdint>
 #include <vector>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -41,6 +42,48 @@ void create_ppm_image(const std::string filename, const std::vector<uint32_t> &i
         ofs << static_cast<char>(r) << static_cast<char>(g) << static_cast<char>(b);
     }
     ofs.close();
+}
+
+bool load_texture(const std::string filename, std::vector<uint32_t> &texture, size_t &text_size, size_t &text_count)
+{
+    int nchannels = -1, w, h;
+    unsigned char *pixmap = stbi_load(filename.c_str(), &w, &h, &nchannels, 0);
+    if (!pixmap)
+    {
+        std::cerr << "Error: can not load the textures" << std::endl;
+        return false;
+    }
+
+    if (4 != nchannels)
+    {
+        std::cerr << "Error: the texture must be a 32 bit image" << std::endl;
+        stbi_image_free(pixmap);
+        return false;
+    }
+
+    text_count = w / h;
+    text_size = w / text_count;
+    if (w != h * int(text_count))
+    {
+        std::cerr << "Error: the texture file must contain N square textures packed horizontally" << std::endl;
+        stbi_image_free(pixmap);
+        return false;
+    }
+
+    texture = std::vector<uint32_t>(w * h);
+    for (int j = 0; j < h; j++)
+    {
+        for (int i = 0; i < w; i++)
+        {
+            uint8_t r = pixmap[(i + j * w) * 4 + 0];
+            uint8_t g = pixmap[(i + j * w) * 4 + 1];
+            uint8_t b = pixmap[(i + j * w) * 4 + 2];
+            uint8_t a = pixmap[(i + j * w) * 4 + 3];
+            texture[i + j * w] = pack_color(r, g, b, a);
+        }
+    }
+    stbi_image_free(pixmap);
+    return true;
 }
 
 void draw_rectangle(std::vector<uint32_t> &img, const size_t img_w, const size_t img_h, const size_t x, const size_t y, const size_t w, const size_t h, const uint32_t color)
@@ -98,69 +141,79 @@ int main()
         colors[i] = pack_color(rand() % 255, rand() % 255, rand() % 255);
     }
 
+    // texturing
+    std::vector<uint32_t> walltext; // textures of walls
+    size_t walltext_size;
+    size_t walltext_count;
+    if (!load_texture("./textures/walltext.png", walltext, walltext_size, walltext_count))
+    {
+        std::cerr << "Faiiled to load wall textures" << std::endl;
+        return -1;
+    }
+
     const size_t rect_w = win_w / (map_w * 2); // Left side of screen is map, right side is 3d projection
     const size_t rect_h = win_h / map_h;
 
     // basic animation to showcase raycasting
-    for (size_t frame = 0; frame < 360; frame++)
-    {
-        std::stringstream ss;
-        ss << std::setfill('0') << std::setw(5) << frame << ".ppm";
-        player_view_angle += 2 * M_PI / 360;
 
-        framebuffer = std::vector<uint32_t>(win_w * win_h, pack_color(255, 255, 255)); // clear the screen
-
-        for (size_t j = 0; j < map_h; j++)
-        { // draw the map
-            for (size_t i = 0; i < map_w; i++)
-            {
-                if (map[i + j * map_w] == ' ') continue; // skip empty spaces
-                size_t rect_x = i * rect_w;
-                size_t rect_y = j * rect_h;
-                size_t icolor = map[i + j * map_w] - '0';
-                assert(icolor < ncolors);
-                draw_rectangle(framebuffer, win_w, win_h, rect_x, rect_y, rect_w, rect_h, colors[icolor]);
-            }
-        }
-
-        // draw player view direction with fov
-        for (size_t i = 0; i < win_w / 2; i++) //loops through 0->512, casting 512 rays
+    for (size_t j = 0; j < map_h; j++)
+    { // draw the map
+        for (size_t i = 0; i < map_w; i++)
         {
-            float angle = player_view_angle - fov / 2 + fov * i / float(win_w / 2);
-            for (float t = 0; t < player_view_distance; t += 0.01f)
-            {
-                // t is effectively the distance from (cx, cy) to (player_x, player_y)
-                float cx = player_x + t * cosf(angle);
-                float cy = player_y + t * sinf(angle);
-                // (cx, cy) is the hit point
-
-                size_t pix_x = cx * rect_w;
-                size_t pix_y = cy * rect_h;
-                framebuffer[pix_x + pix_y * win_w] = pack_color(160, 160, 160); // this draws the visibility cone
-
-                // our ray touches a wall, so draw the vertical column to create an illusion of 3d
-                if (map[int(cx) + int(cy) * map_w] != ' ')
-                {
-                    size_t icolor = map[int(cx) + int(cy) * map_w] - '0';
-                    assert(icolor < ncolors);
-                    // height of the wall: inversely proportional to the distance to the nearest obstacle
-                    // think of the effect when you see things far away they appear "small" vs things closer to you.
-                    size_t column_height = win_h / (t * cosf(angle - player_view_angle)); // denominator deals with fish eye distortion
-                    draw_rectangle(framebuffer,
-                                   win_w,                           // img_w
-                                   win_h,                           // img_h
-                                   win_w / 2 + i,                   // x
-                                   win_h / 2 - column_height / 2,   // y
-                                   1,                               // width
-                                   column_height,                   // height
-                                   colors[icolor]);                 // color
-                    break;
-                }
-            }
-            
+            if (map[i + j * map_w] == ' ') continue; // skip empty spaces
+            size_t rect_x = i * rect_w;
+            size_t rect_y = j * rect_h;
+            size_t icolor = map[i + j * map_w] - '0';
+            assert(icolor < ncolors);
+            draw_rectangle(framebuffer, win_w, win_h, rect_x, rect_y, rect_w, rect_h, colors[icolor]);
         }
-        create_ppm_image(ss.str(), framebuffer, win_w, win_h);
     }
+
+    // draw player view direction with fov
+    for (size_t i = 0; i < win_w / 2; i++) //loops through 0->512, casting 512 rays
+    {
+        float angle = player_view_angle - fov / 2 + fov * i / float(win_w / 2);
+        for (float t = 0; t < player_view_distance; t += 0.01f)
+        {
+            // t is effectively the distance from (cx, cy) to (player_x, player_y)
+            float cx = player_x + t * cosf(angle);
+            float cy = player_y + t * sinf(angle);
+            // (cx, cy) is the hit point
+
+            size_t pix_x = cx * rect_w;
+            size_t pix_y = cy * rect_h;
+            framebuffer[pix_x + pix_y * win_w] = pack_color(160, 160, 160); // this draws the visibility cone
+
+            // our ray touches a wall, so draw the vertical column to create an illusion of 3d
+            if (map[int(cx) + int(cy) * map_w] != ' ')
+            {
+                size_t icolor = map[int(cx) + int(cy) * map_w] - '0';
+                assert(icolor < ncolors);
+                // height of the wall: inversely proportional to the distance to the nearest obstacle
+                // think of the effect when you see things far away they appear "small" vs things closer to you.
+                size_t column_height = win_h / (t * cosf(angle - player_view_angle)); // denominator deals with fish eye distortion
+                draw_rectangle(framebuffer,
+                               win_w,                           // img_w
+                               win_h,                           // img_h
+                               win_w / 2 + i,                   // x
+                               win_h / 2 - column_height / 2,   // y
+                               1,                               // width
+                               column_height,                   // height
+                               colors[icolor]);                 // color
+                break;
+            }
+        }
+    }
+
+    const size_t text_id = 4; // draw the ith texture on the screen
+    for(size_t i = 0; i < walltext_size; i++)
+    {
+        for(size_t j = 0; j < walltext_size; j++)
+        {
+            framebuffer[i+j*win_w] = walltext[i + text_id*walltext_size + j * walltext_size * walltext_count];
+        }
+    }
+    create_ppm_image("./out.ppm", framebuffer, win_w, win_h);
 
     return 0;
 }
