@@ -1,6 +1,8 @@
 #include <iostream>
 #include <cassert>
 #include <fstream>
+#include <sstream>
+#include <iomanip>
 #include <cstdint>
 #include <vector>
 
@@ -30,7 +32,7 @@ void unpack_color(const uint32_t &color, uint8_t &r, uint8_t &g, uint8_t &b, uin
 void create_ppm_image(const std::string filename, const std::vector<uint32_t> &image, const size_t w, const size_t h)
 {
     assert(image.size() == w * h);
-    std::ofstream ofs(filename, std::ios::binary);
+    std::ofstream ofs(filename);
     ofs << "P6\n" << w << " " << h << "\n255\n";
     for (size_t i = 0; i < h * w; ++i)
     {
@@ -89,57 +91,76 @@ int main()
     const float player_view_distance = 20.0f;
     const float fov = M_PI / 3;
 
+    const size_t ncolors = 10;
+    std::vector<uint32_t> colors(ncolors);
+    for (size_t i = 0; i < ncolors; i++)
+    {
+        colors[i] = pack_color(rand() % 255, rand() % 255, rand() % 255);
+    }
+
     const size_t rect_w = win_w / (map_w * 2); // Left side of screen is map, right side is 3d projection
     const size_t rect_h = win_h / map_h;
-    for (size_t j = 0; j < map_h; j++)
-    { // draw the map
-        for (size_t i = 0; i < map_w; i++)
-        {
-            if (map[i + j * map_w] == ' ') continue; // skip empty spaces
-            size_t rect_x = i * rect_w;
-            size_t rect_y = j * rect_h;
-            draw_rectangle(framebuffer, win_w, win_h, rect_x, rect_y, rect_w, rect_h, pack_color(0, 255, 255));
-        }
-    }
 
-    // draw player on map
-    //draw_rectangle(framebuffer, win_w, win_h, player_x*rect_w, player_y*rect_h, 5, 5, pack_color(255, 255, 255));
-
-    // draw player view direction with fov
-    for (size_t i = 0; i < win_w / 2; i++) //loops through 0->512, casting 512 rays
+    // basic animation to showcase raycasting
+    for (size_t frame = 0; frame < 360; frame++)
     {
-        float angle = player_view_angle - fov / 2 + fov * i / float(win_w / 2);
-        for (float t = 0; t < player_view_distance; t += 0.05f)
-        {
-            // t is effectively the distance from (cx, cy) to (player_x, player_y)
-            float cx = player_x + t * cosf(angle);
-            float cy = player_y + t * sinf(angle);
-            // (cx, cy) is the hit point
+        std::stringstream ss;
+        ss << std::setfill('0') << std::setw(5) << frame << ".ppm";
+        player_view_angle += 2 * M_PI / 360;
 
-            size_t pix_x = cx * rect_w;
-            size_t pix_y = cy * rect_h;
-            framebuffer[pix_x + pix_y * win_w] = pack_color(160, 160, 160); // this draws the visibility cone
+        framebuffer = std::vector<uint32_t>(win_w * win_h, pack_color(255, 255, 255)); // clear the screen
 
-            // our ray touches a wall, so draw the vertical column to create an illusion of 3d
-            if (map[int(cx) + int(cy) * map_w] != ' ')
+        for (size_t j = 0; j < map_h; j++)
+        { // draw the map
+            for (size_t i = 0; i < map_w; i++)
             {
-                // height of the wall: inversely proportional to the distance to the nearest obstacle
-                // think of the effect when you see things far away they appear "small" vs things closer to you.
-                size_t column_height = win_h / t; // height of window divided by distance of hit point
-                draw_rectangle(framebuffer,
-                               win_w,                           // img_w
-                               win_h,                           // img_h
-                               win_w / 2 + i,                   // x
-                               win_h / 2 - column_height / 2,   // y
-                               1,                               // width
-                               column_height,                   // height
-                               pack_color(0, 255, 255));        // color
-                break;
+                if (map[i + j * map_w] == ' ') continue; // skip empty spaces
+                size_t rect_x = i * rect_w;
+                size_t rect_y = j * rect_h;
+                size_t icolor = map[i + j * map_w] - '0';
+                assert(icolor < ncolors);
+                draw_rectangle(framebuffer, win_w, win_h, rect_x, rect_y, rect_w, rect_h, colors[icolor]);
             }
         }
-    }
 
-    create_ppm_image("./out.ppm", framebuffer, win_w, win_h);
+        // draw player view direction with fov
+        for (size_t i = 0; i < win_w / 2; i++) //loops through 0->512, casting 512 rays
+        {
+            float angle = player_view_angle - fov / 2 + fov * i / float(win_w / 2);
+            for (float t = 0; t < player_view_distance; t += 0.01f)
+            {
+                // t is effectively the distance from (cx, cy) to (player_x, player_y)
+                float cx = player_x + t * cosf(angle);
+                float cy = player_y + t * sinf(angle);
+                // (cx, cy) is the hit point
+
+                size_t pix_x = cx * rect_w;
+                size_t pix_y = cy * rect_h;
+                framebuffer[pix_x + pix_y * win_w] = pack_color(160, 160, 160); // this draws the visibility cone
+
+                // our ray touches a wall, so draw the vertical column to create an illusion of 3d
+                if (map[int(cx) + int(cy) * map_w] != ' ')
+                {
+                    size_t icolor = map[int(cx) + int(cy) * map_w] - '0';
+                    assert(icolor < ncolors);
+                    // height of the wall: inversely proportional to the distance to the nearest obstacle
+                    // think of the effect when you see things far away they appear "small" vs things closer to you.
+                    size_t column_height = win_h / t; // height of window divided by distance of hit point
+                    draw_rectangle(framebuffer,
+                                   win_w,                           // img_w
+                                   win_h,                           // img_h
+                                   win_w / 2 + i,                   // x
+                                   win_h / 2 - column_height / 2,   // y
+                                   1,                               // width
+                                   column_height,                   // height
+                                   colors[icolor]);                 // color
+                    break;
+                }
+            }
+            
+        }
+        create_ppm_image(ss.str(), framebuffer, win_w, win_h);
+    }
 
     return 0;
 }
